@@ -3,13 +3,15 @@
     internal class Parser
     {
         public Dictionary<TextSpan, string> diagnostics = new();
-        public readonly Env env = new();
         private int current = 0;
         private readonly List<Token> tokens;
-        public Parser(List<Token> _tokens, Dictionary<TextSpan, string> _diagnostics)
+        public Dictionary<string, double> Vars { get; }
+        public Parser(List<Token> _tokens, Dictionary<TextSpan, string> _diagnostics, Dictionary<string, double> _vars)
         {
             tokens = _tokens.FindAll(t => t.Kind != TokenKind.Space);
+            Tokens = _tokens;
             diagnostics = _diagnostics;
+            Vars = _vars;
         }
 
         public Expr ParseExpr(ushort pred = 0)
@@ -24,6 +26,7 @@
                     TokenKind.Identifier => CheckExtension(GetName(t), pred),
                     TokenKind.Minus => CheckExtension(new UnaryExpr(ParseExpr(4), TokenKind.Minus), pred),
                     TokenKind.LParen => CheckExtension(GetGrouping(), pred),
+                    TokenKind.Del => GetDel(),
                     _ => Err(t.Span)
                 };
             }
@@ -33,6 +36,9 @@
         private Expr CheckExtension(Expr left, ushort pred)
         {
             Token t = Peek;
+            if (t.Kind == TokenKind.Eof)
+                return left;
+
             if (BinPrecedence(t.Kind) > 0)
             {
                 ushort precedence;
@@ -57,16 +63,35 @@
                         return Err(t.Span, "Erwartete ')'.");
 
                     Advance();
-                    return new CallExpr(l.Name, arg, env);
+                    left = new CallExpr(l.Name, arg);
                 }
-                else return Err(t.Span, "Funktionsaufruf ist nur bei einer Namensnennung möglich.");
+                else
+                {
+                    Advance();
+                    left = new BinaryExpr(left, TokenKind.Star, GetGrouping());
+                }
             }
             else if (t.Kind == TokenKind.Bang)
             {
                 double l = left.Calc();
                 if (l == Math.Round(l) && l >= 0)
-                    left = new UnaryExpr(left, TokenKind.Bang);
+                    return new UnaryExpr(left, TokenKind.Bang);
                 else return Err(t.Span, "Die Fakultät kann nur auf natürliche Zahlen angewendet werden.");
+            }
+            else if (t.Kind == TokenKind.Eq)
+            {
+                if (left is NameExpr l)
+                {
+                    Advance();
+                    Expr value = ParseExpr();
+                    if (Vars.ContainsKey(l.Name) || BuiltIn.Vars.ContainsKey(l.Name))
+                        return Err(Peek.Span, $"\"{l.Name}\" existiert bereits.");
+
+                    Vars.Add(l.Name, value.Calc());
+                    return new VarExpr(l.Name, value);
+                }
+                else
+                    return Err(t.Span, "Variablen brauchen einen Namen.");
             }
 
             return left;
@@ -84,18 +109,50 @@
             if (Peek.Kind != TokenKind.RParen)
                 return Err(Peek.Span, "Erwartete ')'.");
 
-            return new GroupingExpr(expr);
+            expr = new GroupingExpr(expr);
+            Advance();
+            return expr;
         }
 
         public Expr GetName(Token t)
         {
-            if (!env.Vars.ContainsKey(t.Lexeme) && !env.Functions.Any(fn => fn.Name == t.Lexeme))
+            if (Peek.Kind == TokenKind.Eq)
+                return new NameExpr(t.Lexeme);
+
+            if (!Vars.ContainsKey(t.Lexeme) && !BuiltIn.Vars.ContainsKey(t.Lexeme) && !BuiltIn.Functions.Any(fn => fn.Name == t.Lexeme))
                 return Err(t.Span, $"Konnte \"{t.Lexeme}\" nicht finden.");
-            return new NameExpr(t.Lexeme, env);
+
+            if (Peek.Kind != TokenKind.LParen)
+            {
+                if (BuiltIn.Functions.Any(fn => fn.Name == t.Lexeme))
+                    return Err(t.Span, $"\"{t.Lexeme}\" ist eine Funktion - du musst sie aufrufen.");
+                return new LiteralExpr(BuiltIn.Vars.TryGetValue(t.Lexeme, out double value) ? value : Vars[t.Lexeme]);
+            }
+            else
+                return new NameExpr(t.Lexeme);
+        }
+
+        public Expr GetDel()
+        {
+            Token id = Advance();
+            if (id.Kind != TokenKind.Identifier)
+                return Err(id.Span, "Erwartete einen Namen.");
+            else if (BuiltIn.Vars.ContainsKey(id.Lexeme))
+                return Err(id.Span, $"Kann keine Konstante löschen.");
+            else if (BuiltIn.Functions.Any(fn => fn.Name == id.Lexeme))
+                return Err(id.Span, $"Kann keine Funktion löschen.");
+            else if (!Vars.ContainsKey(id.Lexeme))
+                return Err(id.Span, $"Konnte \"{id.Lexeme}\" nicht finden.");
+
+            Vars.Remove(id.Lexeme);
+            return new DelExpr(id.Lexeme);
         }
 
         public bool IsAtEnd => current >= tokens.Count;
         public Token Peek => tokens[current];
+
+        public List<Token> Tokens { get; }
+
         public Token Advance()
         {
             Token t = Peek;

@@ -7,6 +7,7 @@ namespace Rechner
         static void Main()
         {
             Repl repl = new();
+            Dictionary<string, double> vars = new();
 
             while (true)
             {
@@ -14,7 +15,7 @@ namespace Rechner
                 Lexer lexer = new(src);
                 List<Token> tokens = lexer.Lex();
 
-                Parser parser = new(tokens, lexer.diagnostics);
+                Parser parser = new(tokens, lexer.diagnostics, vars);
                 Expr expr = parser.ParseExpr();
 
                 if (parser.diagnostics.Any())
@@ -23,7 +24,7 @@ namespace Rechner
                     Console.WriteLine();
                     Console.ForegroundColor = ConsoleColor.DarkRed;
                     foreach (KeyValuePair<TextSpan, string> d in parser.diagnostics)
-                        Console.WriteLine($"{new String('-', d.Key.Start + 3)}^ {d.Value}");
+                        Console.WriteLine($"{new string('-', d.Key.Start + 3)}{new string('^', d.Key.Length)} {d.Value}");
 
                     Console.ResetColor();
                 }

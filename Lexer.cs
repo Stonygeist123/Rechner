@@ -48,6 +48,9 @@
                 case '!':
                     kind = TokenKind.Bang;
                     Advance(); break;
+                case '=':
+                    kind = TokenKind.Eq;
+                    Advance(); break;
                 case '(':
                     kind = TokenKind.LParen;
                     Advance(); break;
@@ -151,7 +154,7 @@
                     else if (char.IsLetter(c) || c == '_')
                     {
                         while (char.IsLetter(Peek()) || Peek() == '_') Advance();
-                        kind = TokenKind.Identifier;
+                        kind = src[start..current] == "del" ? TokenKind.Del : TokenKind.Identifier;
                     }
                     else
                     {

@@ -24,9 +24,11 @@
         Mod,
         Power,
         Bang,
+        Eq,
         LParen,
         RParen,
         Comma,
+        Del,
         Space,
         Eof,
         Bad
@@ -60,10 +62,10 @@
         }
     }
 
-    public class Env
+    public static class BuiltIn
     {
-        public Dictionary<string, double> Vars { get; } = new() { { "pi", Math.PI }, { "e", Math.E } };
-        public List<Fn> Functions { get; } = new() {
+        public static Dictionary<string, double> Vars { get; } = new() { { "pi", Math.PI }, { "e", Math.E } };
+        public static List<Fn> Functions { get; } = new() {
             new Fn("sin", x => Math.Sin(x * (Math.PI / 180))),
             new Fn("cos", x => Math.Cos(x  * Math.PI / 180.0)),
             new Fn("tan", x=>Math.Tan(x * Math.PI / 180.0)),
@@ -71,8 +73,8 @@
             new Fn("cbrt",  Math.Cbrt)
         };
 
-        public double GetVariable(string n) => Vars[n];
-        public Fn GetFunction(string n) => Functions.Find(fn => fn.Name == n);
+        public static double GetVariable(string n) => Vars[n];
+        public static Fn GetFunction(string n) => Functions.Find(fn => fn.Name == n);
     }
 
     public abstract class Expr
@@ -144,31 +146,45 @@
     public class NameExpr : Expr
     {
         public string Name { get; }
-        public Env Env { get; }
-        public NameExpr(string _name, Env _env)
-        {
-            Name = _name;
-            Env = _env;
-        }
-
-        public override double Calc() => Env.GetVariable(Name);
+        public NameExpr(string _name) => Name = _name;
+        public override double Calc() => 0;
         public override string Stringify(int indent) => $"{new string(' ', indent)}-> {Name}";
+    }
+
+    public class DelExpr : Expr
+    {
+        public string Name { get; }
+        public DelExpr(string _name) => Name = _name;
+        public override double Calc() => 0;
+        public override string Stringify(int indent) => $"{new string(' ', indent)}Del -> {Name}";
     }
 
     public class CallExpr : Expr
     {
         public string Callee { get; }
         public Expr Arg { get; }
-        public Env Env { get; }
-        public CallExpr(string _callee, Expr _arg, Env _env)
+        public CallExpr(string _callee, Expr _arg)
         {
             Callee = _callee;
             Arg = _arg;
-            Env = _env;
         }
 
-        public override double Calc() => Env.GetFunction(Callee).Func.Invoke(Arg.Calc());
+        public override double Calc() => BuiltIn.GetFunction(Callee).Func.Invoke(Arg.Calc());
         public override string Stringify(int indent) => $"{new string(' ', indent)}-> Call\n{new string(' ', indent + 3)}Callee: {Callee}\n{new string(' ', indent + 3)}Arg: {Arg.Stringify(indent + 6)}";
+    }
+
+    public class VarExpr : Expr
+    {
+        public string Name { get; }
+        public Expr Value { get; }
+        public VarExpr(string _name, Expr _value)
+        {
+            Name = _name;
+            Value = _value;
+        }
+
+        public override double Calc() => Value.Calc();
+        public override string Stringify(int indent) => $"{new string(' ', indent)}-> Var\n{new string(' ', indent + 3)}Name: {Name}\n{new string(' ', indent + 3)}Value: {Value.Stringify(indent + 6)}";
     }
 
     public class ErrorExpr : Expr

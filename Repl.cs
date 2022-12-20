@@ -94,6 +94,7 @@ namespace Rechner
                         TokenKind.Comma => ConsoleColor.Gray,
                         TokenKind.LParen or TokenKind.RParen => ConsoleColor.DarkGray,
                         TokenKind.Bad => ConsoleColor.Red,
+                        TokenKind.Del => ConsoleColor.DarkBlue,
                         _ => ConsoleColor.Gray,
                     };
                     Console.Write(t.Lexeme);
