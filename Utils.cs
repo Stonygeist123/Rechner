@@ -66,7 +66,7 @@
         public List<Fn> Functions { get; } = new() {
             new Fn("sin", x => Math.Sin(x * (Math.PI / 180))),
             new Fn("cos", x => Math.Cos(x  * Math.PI / 180.0)),
-            new Fn("tan", Math.Tan),
+            new Fn("tan", x=>Math.Tan(x * Math.PI / 180.0)),
             new Fn("sqrt",  Math.Sqrt),
             new Fn("cbrt",  Math.Cbrt)
         };

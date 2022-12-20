@@ -64,9 +64,9 @@
             else if (t.Kind == TokenKind.Bang)
             {
                 double l = left.Calc();
-                if (l == Math.Round(l))
+                if (l == Math.Round(l) && l >= 0)
                     left = new UnaryExpr(left, TokenKind.Bang);
-                else return Err(t.Span, ".");
+                else return Err(t.Span, "Die Fakultät kann nur auf natürliche Zahlen angewendet werden.");
             }
 
             return left;
