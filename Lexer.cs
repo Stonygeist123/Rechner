@@ -60,6 +60,9 @@
                 case ',':
                     kind = TokenKind.Comma;
                     Advance(); break;
+                case ':':
+                    kind = TokenKind.Colon;
+                    Advance(); break;
                 case ' ':
                 case '\r':
                 case '\n':

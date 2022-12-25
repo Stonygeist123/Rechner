@@ -51,3 +51,17 @@
 // Löscht eine Variable
 >> del x
 ```
+
+## Funktionen
+```
+>> f: x + 5
+
+>> g: x^2 - 1
+
+>> f(4)
+9
+
+>> f(5)
+24
+
+```

@@ -4,6 +4,8 @@ namespace Rechner
 {
     internal class Repl
     {
+        private string inputStart = "";
+        private bool graph = false;
         private StringBuilder doc = new();
         private int _currentCharacter = 0;
         public int CurrentCharacter
@@ -14,18 +16,17 @@ namespace Rechner
                 if (_currentCharacter != value)
                 {
                     _currentCharacter = value;
-                    Console.CursorLeft = _currentCharacter + 3;
+                    Console.CursorLeft = _currentCharacter + inputStart.Length;
                 }
             }
         }
 
-        public string Read()
+        public string Read(bool _graph = false)
         {
-            doc = new();
-            CurrentCharacter = 0;
-            Console.CursorLeft = 0;
             Console.ForegroundColor = ConsoleColor.DarkGreen;
-            Console.Write(">> ");
+            graph = _graph;
+            inputStart = graph ? "f(x) = " : ">> ";
+            Console.Write(inputStart);
             Console.ResetColor();
 
             while (true)
@@ -75,9 +76,17 @@ namespace Rechner
 
         public void Print()
         {
-            Console.Clear();
+            if (graph) Console.Clear();
+            else
+            {
+                int currentLineCursor = Console.CursorTop;
+                Console.SetCursorPosition(0, Console.CursorTop);
+                Console.Write(new string(' ', Console.WindowWidth));
+                Console.SetCursorPosition(0, currentLineCursor);
+            }
+
             Console.ForegroundColor = ConsoleColor.DarkGreen;
-            Console.Write(">> ");
+            Console.Write(inputStart);
             Console.ResetColor();
 
             doc = doc.Replace("\r", "");
@@ -102,7 +111,7 @@ namespace Rechner
                 }
             }
 
-            Console.CursorLeft = CurrentCharacter + 3;
+            Console.CursorLeft = CurrentCharacter + inputStart.Length;
         }
     }
 }

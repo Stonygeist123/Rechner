@@ -3,46 +3,65 @@
     internal class Parser
     {
         public Dictionary<TextSpan, string> diagnostics = new();
+        private readonly bool graph;
+        private bool inFn = false;
         private int current = 0;
         private readonly List<Token> tokens;
         public Dictionary<string, double> Vars { get; }
-        public Parser(List<Token> _tokens, Dictionary<TextSpan, string> _diagnostics, Dictionary<string, double> _vars)
+        public Dictionary<string, Expr> Fns { get; }
+        public Parser(List<Token> _tokens, Dictionary<TextSpan, string> _diagnostics, Dictionary<string, double> _vars, Dictionary<string, Expr> _fns, bool _graph = false)
         {
             tokens = _tokens.FindAll(t => t.Kind != TokenKind.Space);
             Tokens = _tokens;
             diagnostics = _diagnostics;
             Vars = _vars;
+            Fns = _fns;
+            graph = _graph;
         }
 
         public Expr ParseExpr(ushort pred = 0)
         {
             Token t = Advance();
 
-            try
-            {
-                return t.Kind switch
+            if (graph)
+                try
                 {
-                    TokenKind.Number => CheckExtension(new LiteralExpr(t.Literal ?? 0), pred),
-                    TokenKind.Identifier => CheckExtension(GetName(t), pred),
-                    TokenKind.Minus => CheckExtension(new UnaryExpr(ParseExpr(4), TokenKind.Minus), pred),
-                    TokenKind.LParen => CheckExtension(GetGrouping(), pred),
-                    TokenKind.Del => GetDel(),
-                    _ => Err(t.Span)
-                };
-            }
-            catch { return new ErrorExpr(); }
+                    return t.Kind switch
+                    {
+                        TokenKind.Number => CheckExtension(new LiteralExpr(t.Literal ?? 0), pred),
+                        TokenKind.Identifier => CheckExtension(GetName(t), pred),
+                        TokenKind.Minus => CheckExtension(new UnaryExpr(ParseExpr(4), TokenKind.Minus), pred),
+                        TokenKind.LParen => CheckExtension(GetGrouping(), pred),
+                        _ => Err(t.Span)
+                    };
+                }
+                catch { return new ErrorExpr(); }
+            else
+                try
+                {
+                    return t.Kind switch
+                    {
+                        TokenKind.Number => CheckExtension(new LiteralExpr(t.Literal ?? 0), pred),
+                        TokenKind.Identifier => CheckExtension(GetName(t), pred),
+                        TokenKind.Minus => CheckExtension(new UnaryExpr(ParseExpr(4), TokenKind.Minus), pred),
+                        TokenKind.LParen => CheckExtension(GetGrouping(), pred),
+                        TokenKind.Del => GetDel(),
+                        _ => Err(t.Span)
+                    };
+                }
+                catch { return new ErrorExpr(); }
         }
 
         private Expr CheckExtension(Expr left, ushort pred)
         {
-            Token t = Peek;
-            if (t.Kind == TokenKind.Eof)
+            if (IsAtEnd)
                 return left;
 
+            Token t = Current;
             if (BinPrecedence(t.Kind) > 0)
             {
                 ushort precedence;
-                Token op = Peek;
+                Token op = t;
                 do
                 {
                     precedence = BinPrecedence(op.Kind);
@@ -52,24 +71,25 @@
                     op = Advance();
                     Expr right = ParseExpr(precedence);
                     left = CheckExtension(new BinaryExpr(left, op.Kind, right), precedence);
-                } while (!IsAtEnd && BinPrecedence(Peek.Kind) > 0);
+                } while (!IsAtEnd && BinPrecedence(Current.Kind) > 0);
+                return left;
             }
             else if (t.Kind == TokenKind.LParen)
             {
-                if (left is NameExpr l)
+                Advance();
+                if (left is NameExpr n)
                 {
                     Expr arg = ParseExpr();
-                    if (Peek.Kind != TokenKind.RParen)
+                    if (Current.Kind != TokenKind.RParen)
                         return Err(t.Span, "Erwartete ')'.");
 
                     Advance();
-                    left = new CallExpr(l.Name, arg);
+                    if (!BuiltIn.Functions.Any(f => f.Name == n.Name) && !Fns.TryGetValue(n.Name, out _))
+                        return Err(t.Span, $"Konnte die Funktion \"{n.Name}\" nicht finden.");
+                    left = new CallExpr(n.Name, arg, BuiltIn.Functions.Any(f => f.Name == n.Name) ? null : Fns[n.Name]);
                 }
                 else
-                {
-                    Advance();
                     left = new BinaryExpr(left, TokenKind.Star, GetGrouping());
-                }
             }
             else if (t.Kind == TokenKind.Bang)
             {
@@ -80,21 +100,40 @@
             }
             else if (t.Kind == TokenKind.Eq)
             {
-                if (left is NameExpr l)
-                {
-                    Advance();
-                    Expr value = ParseExpr();
-                    if (Vars.ContainsKey(l.Name) || BuiltIn.Vars.ContainsKey(l.Name))
-                        return Err(Peek.Span, $"\"{l.Name}\" existiert bereits.");
+                if (graph)
+                    return Err(t.Span);
 
-                    Vars.Add(l.Name, value.Calc());
-                    return new VarExpr(l.Name, value);
+                Advance();
+                if (left is NameExpr n)
+                {
+                    Expr value = ParseExpr();
+                    if (BuiltIn.Vars.ContainsKey(n.Name)) return Err(t.Span, $"\"{n.Name}\" existiert bereits.");
+                    else if (Vars.ContainsKey(n.Name))
+                        Vars[n.Name] = value.Calc();
+                    else
+                        Vars.Add(n.Name, value.Calc());
+                    return new VarDecl(n.Name, value);
                 }
                 else
                     return Err(t.Span, "Variablen brauchen einen Namen.");
             }
+            else if (t.Kind == TokenKind.Colon && left is NameExpr n)
+            {
+                if (Fns.ContainsKey(n.Name) || BuiltIn.Functions.Any(f => f.Name == n.Name))
+                    return Err(t.Span, $"Die Funktion \"{n.Name}\" existiert bereits.");
 
-            return left;
+                Advance();
+                inFn = true;
+                Expr term = ParseExpr();
+                inFn = false;
+
+                if (!diagnostics.Any())
+                    Fns.Add(n.Name, term);
+                return new FnDecl(n.Name, term);
+            }
+            else return left;
+
+            return CheckExtension(left, 0);
         }
 
         private ErrorExpr Err(TextSpan span, string msg = "Ungültiger Ausdruck.")
@@ -106,8 +145,8 @@
         public Expr GetGrouping()
         {
             Expr expr = ParseExpr();
-            if (Peek.Kind != TokenKind.RParen)
-                return Err(Peek.Span, "Erwartete ')'.");
+            if (Current.Kind != TokenKind.RParen)
+                return Err(Current.Span, "Erwartete ')'.");
 
             expr = new GroupingExpr(expr);
             Advance();
@@ -116,20 +155,26 @@
 
         public Expr GetName(Token t)
         {
-            if (Peek.Kind == TokenKind.Eq)
+            if (Current.Kind == TokenKind.Eq)
                 return new NameExpr(t.Lexeme);
 
-            if (!Vars.ContainsKey(t.Lexeme) && !BuiltIn.Vars.ContainsKey(t.Lexeme) && !BuiltIn.Functions.Any(fn => fn.Name == t.Lexeme))
+            if (!Vars.ContainsKey(t.Lexeme) && !BuiltIn.Vars.ContainsKey(t.Lexeme) && !BuiltIn.Functions.Any(fn => fn.Name == t.Lexeme) && !Fns.ContainsKey(t.Lexeme)
+                && ((!inFn && !graph) || t.Lexeme != "x")
+                && Current.Kind != TokenKind.Colon)
                 return Err(t.Span, $"Konnte \"{t.Lexeme}\" nicht finden.");
 
-            if (Peek.Kind != TokenKind.LParen)
+            if (Current.Kind != TokenKind.LParen)
             {
                 if (BuiltIn.Functions.Any(fn => fn.Name == t.Lexeme))
                     return Err(t.Span, $"\"{t.Lexeme}\" ist eine Funktion - du musst sie aufrufen.");
-                return new LiteralExpr(BuiltIn.Vars.TryGetValue(t.Lexeme, out double value) ? value : Vars[t.Lexeme]);
+
+                if ((graph || inFn) && t.Lexeme == "x") return new NameExpr(t.Lexeme);
+                else if (BuiltIn.Vars.TryGetValue(t.Lexeme, out double v)) return new LiteralExpr(v);
+                else if (Vars.TryGetValue(t.Lexeme, out double v1)) return new LiteralExpr(v1);
             }
-            else
-                return new NameExpr(t.Lexeme);
+
+
+            return new NameExpr(t.Lexeme);
         }
 
         public Expr GetDel()
@@ -149,13 +194,14 @@
         }
 
         public bool IsAtEnd => current >= tokens.Count;
-        public Token Peek => tokens[current];
+        public Token Current => tokens[current];
+        public Token Peek(int offset) => tokens[current + offset];
 
         public List<Token> Tokens { get; }
 
         public Token Advance()
         {
-            Token t = Peek;
+            Token t = Current;
             ++current;
             return t;
         }
